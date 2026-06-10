@@ -118,10 +118,22 @@
 
   :focus-visible{outline:2px solid var(--focus);outline-offset:1px}
 
+  #sheet-handle{display:none;align-items:center;gap:10px;padding:11px 16px;cursor:pointer;
+    border-bottom:1px solid var(--line);user-select:none}
+  #sheet-handle .grip{width:38px;height:4px;border-radius:2px;background:var(--slate);flex-shrink:0}
+  #sheet-handle .t{font-size:13.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #sheet-handle .hint{margin-left:auto;font-size:11.5px;color:var(--ink-dim);font-style:italic;white-space:nowrap}
+
   @media (max-width:760px){
-    #main{flex-direction:column}
-    #map-wrap{flex:none;height:44vh}
-    #side{width:100%;flex:1;border-left:none;border-top:1px solid var(--line)}
+    #main{position:relative}
+    #map-wrap{position:absolute;inset:0}
+    #side{position:absolute;left:0;right:0;bottom:0;width:100%;height:76%;
+      border-left:none;border-top:1px solid var(--line);border-radius:12px 12px 0 0;
+      box-shadow:0 -10px 28px rgba(0,0,0,.5);z-index:40;
+      transform:translateY(calc(100% - 46px));transition:transform .25s ease}
+    #side.open{transform:translateY(0)}
+    #sheet-handle{display:flex}
+    #surveyctl{bottom:58px}
   }
   @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
@@ -156,6 +168,11 @@
       </div>
     </div>
     <div id="side">
+      <div id="sheet-handle">
+        <div class="grip"></div>
+        <span class="t" id="sheet-title">Logbook</span>
+        <span class="hint" id="sheet-hint">tap to open</span>
+      </div>
       <div id="stats">
         <div class="stat"><div class="v" id="s-objects">&ndash;</div><div class="k">Objects imaged</div></div>
         <div class="stat"><div class="v" id="s-sessions">&ndash;</div><div class="k">Sessions</div></div>
@@ -293,7 +310,26 @@ function buildMap(){
     catCatalogue = A.catalog({name:"Catalogue", shape:FAINTRING});
     aladin.addCatalog(catCatalogue);
     aladin.addCatalog(catImaged);
-    aladin.on("objectClicked", obj => { if(obj && obj.data && obj.data.ref) select(obj.data.ref, false); });
+    let lastObjClick = 0;
+    aladin.on("objectClicked", obj => {
+      if(obj && obj.data && obj.data.ref){ lastObjClick = Date.now(); select(obj.data.ref, false); }
+    });
+    // touch-friendly fallback: our own hit-test on map taps (Aladin's own
+    // object picking is unreliable for custom-drawn markers on touch screens)
+    aladin.on("click", pos => {
+      if(!pos || pos.ra == null) return;
+      if(Date.now() - lastObjClick < 450) return;   // objectClicked already handled it
+      const fov = aladin.getFov()[0];
+      const tol = Math.max(0.3, fov * 0.035);        // finger-sized, scales with zoom
+      const cosd = Math.cos(pos.dec * Math.PI/180);
+      let best = null, bd = tol;
+      for(const c of allMarkerRefs()){
+        let dra = Math.abs(c.ra - pos.ra); if(dra > 180) dra = 360 - dra;
+        const d = Math.hypot(dra * cosd, c.dec - pos.dec);
+        if(d < bd){ bd = d; best = c.ref; }
+      }
+      if(best) select(best, false);
+    });
     $("survey").addEventListener("change", e => aladin.setBaseImageLayer(e.target.value));
     refreshMarkers();
   });
@@ -317,12 +353,34 @@ function refreshMarkers(){
   }
 }
 
+function allMarkerRefs(){
+  const out = [];
+  const dbNames = new Set(targets.map(t=>(t.name||"").toLowerCase()));
+  for(const t of targets) if(t.ra!=null) out.push({ra:t.ra, dec:t.dec, ref:{kind:"db",t}});
+  for(const m of MESSIER) if(!dbNames.has(m[0].toLowerCase())) out.push({ra:m[3], dec:m[4], ref:{kind:"messier",m}});
+  return out;
+}
+
+// ================= mobile bottom sheet =================
+const mqMobile = window.matchMedia("(max-width:760px)");
+function expandSheet(){ if(mqMobile.matches) $("side").classList.add("open"); }
+function collapseSheet(){ $("side").classList.remove("open"); }
+$("sheet-handle").onclick = () => $("side").classList.toggle("open");
+$("map-wrap").addEventListener("pointerdown", () => { if(mqMobile.matches) collapseSheet(); });
+function updateSheetHandle(){
+  const name = selected ? (selected.kind==="db" ? selected.t.name : selected.m[0]) : null;
+  $("sheet-title").textContent = name || "Logbook";
+  $("sheet-hint").textContent = name ? "tap for details" : "tap to open";
+}
+
 // ================= selection & panel =================
 function select(ref, fly=true){
   selected = ref;
   const {ra,dec} = refCoords(ref);
   if(fly && aladin && ra!=null){ aladin.gotoRaDec(ra,dec); if(aladin.getFov()[0]>12) aladin.setFov(8); }
   renderDetail();
+  updateSheetHandle();
+  expandSheet();
 }
 function refCoords(ref){
   return ref.kind==="db" ? {ra:ref.t.ra, dec:ref.t.dec} : {ra:ref.m[3], dec:ref.m[4]};
