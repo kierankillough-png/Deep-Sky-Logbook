@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Deep Sky Logbook</title>
+<style>
+  :root{
+    --sky-0:#0a0e1c;      /* chart deep */
+    --sky-1:#0e1426;      /* app background */
+    --panel:#141b30;      /* surfaces */
+    --panel-2:#1a2240;    /* raised surfaces */
+    --line:#26304f;       /* hairlines */
+    --ink:#e8ecf5;        /* primary text */
+    --ink-dim:#8a93ad;    /* secondary text */
+    --amber:#e8b44c;      /* imaged / brass accent */
+    --amber-dim:#a87f33;
+    --slate:#5d6b8f;      /* catalogue markers */
+    --focus:#7fa8ff;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:var(--sky-1);
+    color:var(--ink);
+    font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+    overflow:hidden;
+  }
+  .mono{font-family:ui-monospace,"SF Mono","Cascadia Mono",Menlo,Consolas,monospace}
+
+  #app{display:flex;flex-direction:column;height:100vh}
+
+  header{
+    display:flex;align-items:center;gap:12px;
+    padding:10px 20px;border-bottom:1px solid var(--line);
+    flex-wrap:wrap;
+  }
+  .avatar{
+    width:34px;height:34px;border-radius:50%;flex-shrink:0;
+    border:1px solid var(--amber-dim);background:var(--sky-0);
+    display:block;
+  }
+  .brand{display:flex;flex-direction:column;line-height:1.25}
+  header h1{
+    font-size:16px;font-weight:600;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--ink);
+  }
+  header h1 .tilde{color:var(--amber)}
+  header .sub{font-size:12px;color:var(--ink-dim);font-style:italic}
+  header .handle{color:var(--amber-dim);text-decoration:none;font-style:normal;font-family:ui-monospace,Menlo,monospace;font-size:11.5px}
+  header .handle:hover{color:var(--amber);text-decoration:underline}
+  #storage-note{font-size:12px;color:var(--ink-dim);margin-left:auto;font-style:italic}
+
+  #main{display:flex;flex:1;min-height:0}
+
+  /* ----- chart ----- */
+  #chart-wrap{position:relative;flex:1;min-width:0;background:var(--sky-0)}
+  #chart{display:block;width:100%;height:100%;cursor:grab;touch-action:none}
+  #chart.dragging{cursor:grabbing}
+  #hoverlabel{
+    position:absolute;pointer-events:none;display:none;
+    background:rgba(10,14,28,.92);border:1px solid var(--line);
+    padding:5px 9px;font-size:12.5px;border-radius:3px;color:var(--ink);
+    white-space:nowrap;z-index:5;
+  }
+  #hoverlabel .t{color:var(--ink-dim);font-size:11px}
+  #zoomctl{
+    position:absolute;right:12px;bottom:12px;display:flex;flex-direction:column;gap:6px;z-index:5;
+  }
+  #zoomctl button{
+    width:32px;height:32px;background:var(--panel);border:1px solid var(--line);
+    color:var(--ink);font-size:17px;cursor:pointer;border-radius:3px;line-height:1;
+  }
+  #zoomctl button:hover{background:var(--panel-2)}
+  #chart-help{
+    position:absolute;left:12px;bottom:10px;font-size:11.5px;color:var(--slate);
+    font-style:italic;pointer-events:none;
+  }
+
+  /* ----- sidebar ----- */
+  #side{
+    width:340px;flex-shrink:0;border-left:1px solid var(--line);
+    display:flex;flex-direction:column;min-height:0;background:var(--sky-1);
+  }
+  #stats{
+    display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid var(--line);
+  }
+  .stat{padding:12px 16px 10px;border-right:1px solid var(--line)}
+  .stat:nth-child(2n){border-right:none}
+  .stat:nth-child(-n+2){border-bottom:1px solid var(--line)}
+  .stat .v{font-size:21px;color:var(--amber);font-weight:600}
+  .stat .k{
+    font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;
+    color:var(--ink-dim);margin-top:2px;
+  }
+
+  #searchbox{position:relative;padding:12px 14px;border-bottom:1px solid var(--line)}
+  #search{
+    width:100%;background:var(--panel);border:1px solid var(--line);color:var(--ink);
+    padding:8px 10px;font-size:14px;font-family:inherit;border-radius:3px;
+  }
+  #search::placeholder{color:var(--slate);font-style:italic}
+  #suggest{
+    position:absolute;left:14px;right:14px;top:calc(100% - 6px);
+    background:var(--panel-2);border:1px solid var(--line);border-radius:3px;
+    max-height:240px;overflow-y:auto;z-index:20;display:none;
+  }
+  #suggest div{padding:7px 11px;font-size:13.5px;cursor:pointer;display:flex;justify-content:space-between;gap:8px}
+  #suggest div:hover,#suggest div.hot{background:var(--panel)}
+  #suggest .dim{color:var(--ink-dim);font-size:12px}
+
+  #detail{flex:1;overflow-y:auto;padding:16px;min-height:0}
+  #detail .empty{color:var(--ink-dim);font-style:italic;font-size:14px;line-height:1.55;padding-top:6px}
+
+  .obj-name{font-size:20px;font-weight:600}
+  .obj-alias{color:var(--ink-dim);font-style:italic;font-size:14px;margin-top:1px}
+  .obj-meta{
+    margin-top:8px;font-size:12px;color:var(--ink-dim);
+    display:flex;gap:14px;flex-wrap:wrap;
+  }
+  .obj-meta b{color:var(--ink);font-weight:500}
+
+  .imaged-flag{
+    display:inline-block;margin-top:10px;font-size:11px;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--amber);border:1px solid var(--amber-dim);
+    padding:3px 8px;border-radius:2px;
+  }
+  .unimaged-flag{
+    display:inline-block;margin-top:10px;font-size:11px;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--slate);border:1px solid var(--line);
+    padding:3px 8px;border-radius:2px;
+  }
+
+  .sess{
+    border:1px solid var(--line);border-radius:3px;padding:10px 12px;margin-top:10px;
+    background:var(--panel);
+  }
+  .sess .d{font-size:13.5px;font-weight:600}
+  .sess .gear{font-size:12.5px;color:var(--ink-dim);margin-top:3px}
+  .sess .notes{font-size:13px;margin-top:6px;line-height:1.5}
+  .sess .row2{display:flex;gap:12px;margin-top:5px;font-size:12px;color:var(--ink-dim)}
+  .sess .row2 b{color:var(--amber);font-weight:500}
+  .sess .del{
+    margin-top:7px;background:none;border:none;color:var(--slate);font-size:11.5px;
+    cursor:pointer;padding:0;font-style:italic;font-family:inherit;
+  }
+  .sess .del:hover{color:#c97a6d}
+
+  .btn{
+    display:inline-block;background:var(--panel-2);border:1px solid var(--amber-dim);
+    color:var(--amber);padding:8px 14px;font-size:13px;letter-spacing:.06em;
+    cursor:pointer;border-radius:3px;margin-top:14px;font-family:inherit;
+  }
+  .btn:hover{background:#222c52}
+  .btn.quiet{border-color:var(--line);color:var(--ink-dim);letter-spacing:0;font-style:italic}
+
+  /* form */
+  #form{margin-top:14px;border-top:1px solid var(--line);padding-top:12px;display:none}
+  #form label{
+    display:block;font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;
+    color:var(--ink-dim);margin:10px 0 4px;
+  }
+  #form input,#form select,#form textarea{
+    width:100%;background:var(--panel);border:1px solid var(--line);color:var(--ink);
+    padding:7px 9px;font-size:13.5px;font-family:inherit;border-radius:3px;
+  }
+  #form textarea{min-height:64px;resize:vertical;line-height:1.5}
+  .formrow{display:flex;gap:8px}
+  .formrow>div{flex:1}
+
+  :focus-visible{outline:2px solid var(--focus);outline-offset:1px}
+
+  /* mobile */
+  @media (max-width:760px){
+    #main{flex-direction:column}
+    #chart-wrap{flex:none;height:46vh}
+    #side{width:100%;flex:1;border-left:none;border-top:1px solid var(--line)}
+    #chart-help{display:none}
+  }
+  @media (prefers-reduced-motion:reduce){
+    *{transition:none!important;animation:none!important}
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <a href="https://www.instagram.com/AstroManc" target="_blank" rel="noopener" aria-label="AstroManc on Instagram">
+      <img class="avatar" src="data:image/webp;base64,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" alt="AstroManc avatar">
+    </a>
+    <div class="brand">
+      <h1>AstroManc</h1>
+      <span class="sub"><a class="handle" href="https://www.instagram.com/AstroManc" target="_blank" rel="noopener">@AstroManc</a> &middot; deep sky <span class="tilde">~</span> logbook</span>
+    </div>
+    <span id="storage-note"></span>
+  </header>
+  <div id="main">
+    <div id="chart-wrap">
+      <canvas id="chart"></canvas>
+      <div id="hoverlabel"></div>
+      <div id="zoomctl">
+        <button id="zin" aria-label="Zoom in">+</button>
+        <button id="zout" aria-label="Zoom out">&minus;</button>
+        <button id="zfit" aria-label="Fit whole sky" style="font-size:12px">fit</button>
+      </div>
+      <div id="chart-help">drag to pan &middot; scroll to zoom &middot; click an object</div>
+    </div>
+    <div id="side">
+      <div id="stats">
+        <div class="stat"><div class="v" id="s-objects">0</div><div class="k">Objects imaged</div></div>
+        <div class="stat"><div class="v" id="s-sessions">0</div><div class="k">Sessions</div></div>
+        <div class="stat"><div class="v" id="s-hours">0</div><div class="k">Integration (h)</div></div>
+        <div class="stat"><div class="v" id="s-last">&ndash;</div><div class="k">Last session</div></div>
+      </div>
+      <div id="searchbox">
+        <input id="search" type="text" placeholder="Find a target&hellip; e.g. M106, Whirlpool" autocomplete="off">
+        <div id="suggest"></div>
+      </div>
+      <div id="detail">
+        <div class="empty">Select an object on the chart, or search for one, to view and log imaging sessions.<br><br>Amber reticles mark objects you&rsquo;ve imaged; faint rings are the rest of the Messier catalogue waiting their turn.</div>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+// ---------- Catalogue: full Messier list [id, common name, type, RA deg, Dec deg] ----------
+const TYPES = {GC:"Globular cluster",OC:"Open cluster",EN:"Nebula",PN:"Planetary nebula",GX:"Galaxy",SNR:"Supernova remnant",DS:"Double star",AST:"Asterism",SC:"Star cloud"};
+const MESSIER = [
+["M1","Crab Nebula","SNR",83.6,22.0],["M2","","GC",323.4,-0.8],["M3","","GC",205.5,28.4],
+["M4","","GC",245.9,-26.5],["M5","","GC",229.6,2.1],["M6","Butterfly Cluster","OC",265.1,-32.2],
+["M7","Ptolemy Cluster","OC",268.4,-34.8],["M8","Lagoon Nebula","EN",270.9,-24.4],["M9","","GC",259.8,-18.5],
+["M10","","GC",254.3,-4.1],["M11","Wild Duck Cluster","OC",282.8,-6.3],["M12","","GC",251.8,-2.0],
+["M13","Great Hercules Cluster","GC",250.4,36.5],["M14","","GC",264.4,-3.2],["M15","","GC",322.5,12.2],
+["M16","Eagle Nebula","EN",274.7,-13.8],["M17","Omega Nebula","EN",275.2,-16.2],["M18","","OC",275.0,-17.1],
+["M19","","GC",255.7,-26.3],["M20","Trifid Nebula","EN",270.6,-23.0],["M21","","OC",271.0,-22.5],
+["M22","","GC",279.1,-23.9],["M23","","OC",269.3,-19.0],["M24","Sagittarius Star Cloud","SC",274.2,-18.5],
+["M25","","OC",277.9,-19.2],["M26","","OC",281.3,-9.4],["M27","Dumbbell Nebula","PN",299.9,22.7],
+["M28","","GC",276.1,-24.9],["M29","","OC",305.9,38.5],["M30","","GC",325.1,-23.2],
+["M31","Andromeda Galaxy","GX",10.7,41.3],["M32","","GX",10.7,40.9],["M33","Triangulum Galaxy","GX",23.5,30.7],
+["M34","","OC",40.5,42.8],["M35","","OC",92.2,24.3],["M36","","OC",84.1,34.1],
+["M37","","OC",88.1,32.6],["M38","","OC",82.2,35.8],["M39","","OC",322.9,48.4],
+["M40","Winnecke 4","DS",185.6,58.1],["M41","","OC",101.5,-20.7],["M42","Orion Nebula","EN",83.8,-5.4],
+["M43","De Mairan's Nebula","EN",83.9,-5.3],["M44","Beehive Cluster","OC",130.1,19.9],["M45","Pleiades","OC",56.7,24.1],
+["M46","","OC",115.4,-14.8],["M47","","OC",114.1,-14.5],["M48","","OC",123.4,-5.8],
+["M49","","GX",187.4,8.0],["M50","","OC",105.7,-8.3],["M51","Whirlpool Galaxy","GX",202.5,47.2],
+["M52","","OC",351.2,61.6],["M53","","GC",198.2,18.2],["M54","","GC",283.8,-30.5],
+["M55","","GC",295.0,-31.0],["M56","","GC",289.1,30.2],["M57","Ring Nebula","PN",283.4,33.0],
+["M58","","GX",189.4,11.8],["M59","","GX",190.5,11.6],["M60","","GX",190.9,11.5],
+["M61","","GX",185.5,4.5],["M62","","GC",255.3,-30.1],["M63","Sunflower Galaxy","GX",198.9,42.0],
+["M64","Black Eye Galaxy","GX",194.2,21.7],["M65","","GX",169.7,13.1],["M66","","GX",170.1,13.0],
+["M67","","OC",132.8,11.8],["M68","","GC",189.9,-26.7],["M69","","GC",277.8,-32.3],
+["M70","","GC",280.8,-32.3],["M71","","GC",298.4,18.8],["M72","","GC",313.4,-12.5],
+["M73","","AST",314.7,-12.6],["M74","Phantom Galaxy","GX",24.2,15.8],["M75","","GC",301.5,-21.9],
+["M76","Little Dumbbell","PN",25.6,51.6],["M77","Cetus A","GX",40.7,0.0],["M78","","EN",86.7,0.1],
+["M79","","GC",81.0,-24.5],["M80","","GC",244.3,-23.0],["M81","Bode's Galaxy","GX",148.9,69.1],
+["M82","Cigar Galaxy","GX",149.0,69.7],["M83","Southern Pinwheel","GX",204.2,-29.9],["M84","","GX",186.3,12.9],
+["M85","","GX",186.3,18.2],["M86","","GX",186.5,12.9],["M87","Virgo A","GX",187.7,12.4],
+["M88","","GX",188.0,14.4],["M89","","GX",188.9,12.6],["M90","","GX",189.2,13.2],
+["M91","","GX",188.9,14.5],["M92","","GC",259.3,43.1],["M93","","OC",116.1,-23.9],
+["M94","Croc's Eye","GX",192.7,41.1],["M95","","GX",161.0,11.7],["M96","","GX",161.7,11.8],
+["M97","Owl Nebula","PN",168.7,55.0],["M98","","GX",183.4,14.9],["M99","Coma Pinwheel","GX",184.7,14.4],
+["M100","","GX",185.7,15.8],["M101","Pinwheel Galaxy","GX",210.8,54.3],["M102","Spindle Galaxy","GX",226.6,55.8],
+["M103","","OC",23.3,60.7],["M104","Sombrero Galaxy","GX",190.0,-11.6],["M105","","GX",161.9,12.6],
+["M106","","GX",184.7,47.3],["M107","","GC",248.1,-13.0],["M108","Surfboard Galaxy","GX",167.9,55.7],
+["M109","","GX",179.4,53.4],["M110","","GX",10.1,41.7]
+];
+
+// ---------- Bright stars for orientation [name, RA deg, Dec deg, mag] ----------
+const STARS = [
+["Sirius",101.3,-16.7,-1.46],["Canopus",96.0,-52.7,-0.74],["Arcturus",213.9,19.2,-0.05],
+["Vega",279.2,38.8,0.03],["Capella",79.2,46.0,0.08],["Rigel",78.6,-8.2,0.13],
+["Procyon",114.8,5.2,0.34],["Betelgeuse",88.8,7.4,0.5],["Achernar",24.4,-57.2,0.46],
+["Hadar",210.9,-60.4,0.61],["Altair",297.7,8.9,0.77],["Acrux",186.6,-63.1,0.76],
+["Aldebaran",69.0,16.5,0.86],["Antares",247.4,-26.4,1.09],["Spica",201.3,-11.2,0.97],
+["Pollux",116.3,28.0,1.14],["Fomalhaut",344.4,-29.6,1.16],["Deneb",310.4,45.3,1.25],
+["Mimosa",191.9,-59.7,1.25],["Regulus",152.1,12.0,1.4],["Adhara",104.7,-29.0,1.5],
+["Castor",113.6,31.9,1.58],["Shaula",263.4,-37.1,1.63],["Gacrux",187.8,-57.1,1.64],
+["Bellatrix",81.3,6.3,1.64],["Elnath",81.6,28.6,1.65],["Alnilam",84.0,-1.2,1.69],
+["Alnitak",85.2,-1.9,1.77],["Alioth",193.5,56.0,1.77],["Dubhe",165.9,61.8,1.79],
+["Mirfak",51.1,49.9,1.8],["Wezen",107.1,-26.4,1.84],["Kaus Australis",276.0,-34.4,1.85],
+["Alkaid",206.9,49.3,1.86],["Menkalinan",89.9,44.9,1.9],["Alhena",99.4,16.4,1.92],
+["Polaris",38.0,89.3,1.98],["Mirzam",95.7,-18.0,1.98],["Alphard",141.9,-8.7,1.98],
+["Hamal",31.8,23.5,2.0],["Diphda",10.9,-18.0,2.02],["Mizar",201.0,54.9,2.04],
+["Nunki",283.8,-26.3,2.06],["Mirach",17.4,35.6,2.06],["Alpheratz",2.1,29.1,2.06],
+["Rasalhague",263.7,12.6,2.07],["Kochab",222.7,74.2,2.08],["Saiph",86.9,-9.7,2.09],
+["Denebola",177.3,14.6,2.13],["Algol",47.0,41.0,2.12],["Algieba",155.0,19.8,2.08],
+["Mintaka",83.0,-0.3,2.23],["Sadr",305.6,40.3,2.23],["Eltanin",269.2,51.5,2.23],
+["Schedar",10.1,56.5,2.24],["Caph",2.3,59.2,2.27],["Alphecca",233.7,26.7,2.23],
+["Almach",31.0,42.3,2.26],["Enif",326.1,9.9,2.39],["Scheat",345.9,28.1,2.42],
+["Merak",165.5,56.4,2.37],["Phecda",178.5,53.7,2.44],["Markab",346.2,15.2,2.48],
+["Alderamin",319.6,62.6,2.46],["Megrez",183.9,57.0,3.31],["Cor Caroli",194.0,38.3,2.9]
+];
+</script>
+<script>
+// ================= state & storage =================
+const STORE_KEY = "dso-logbook-v1";
+let DB = { sessions: [], custom: [] };   // custom: [{id,name,type,ra,dec}]
+let storageOK = false;
+const memFallback = {};
+
+// ---- one-time import from AstroJournal (10 Jun 2026 snapshot) ----
+const SEED_FLAG = "astrojournal-2026-06-10";
+const SEED_CUSTOM = [
+  {id:"NGC 1499",name:"California Nebula",type:"EN",ra:60.8,dec:36.4},
+  {id:"NGC 6960",name:"Western Veil / Witch's Broom",type:"SNR",ra:311.4,dec:30.7},
+  {id:"Westerhout 5",name:"Soul Nebula",type:"EN",ra:43.5,dec:60.4},
+  {id:"Sharpless 157",name:"Lobster Claw Nebula",type:"EN",ra:349.0,dec:60.0},
+  {id:"IC 405",name:"Flaming Star Nebula",type:"EN",ra:79.1,dec:34.5},
+  {id:"IC 434",name:"Horsehead & Flame Nebulae",type:"EN",ra:85.2,dec:-2.4},
+  {id:"Sh2-190",name:"Heart Nebula",type:"EN",ra:38.2,dec:61.4},
+  {id:"Caldwell 49",name:"Rosette Nebula",type:"EN",ra:98.0,dec:5.0}
+];
+const Z61="William Optics Zenithstar 61 II APO", EDGE="Celestron Edge HD 8";
+const C533="ASI 533MC Pro", C678="ASI 678MC";
+const SEED_SESSIONS = [
+  {id:"aj-1778324201442",objectId:"NGC 1499",date:"2020-12-20",scope:Z61,camera:C533,minutes:120,notes:"24 \u00D7 300s \u00B7 Optolong L-Extreme"},
+  {id:"aj-1778523326510",objectId:"NGC 6960",date:"2021-01-06",scope:Z61,camera:C533,minutes:180,notes:"36 \u00D7 300s \u00B7 Optolong L-Extreme"},
+  {id:"aj-1778323944835",objectId:"M81",date:"2021-01-15",scope:Z61,camera:C533,minutes:390,notes:"78 \u00D7 300s \u00B7 Optolong L-Pro"},
+  {id:"aj-1778323749037",objectId:"M33",date:"2021-01-25",scope:Z61,camera:C533,minutes:240,notes:"48 \u00D7 300s \u00B7 Optolong L-Pro"},
+  {id:"aj-1778323610065",objectId:"M45",date:"2021-01-25",scope:Z61,camera:C533,minutes:30,notes:"6 \u00D7 300s \u00B7 Optolong L-Pro"},
+  {id:"aj-1778322358419",objectId:"Westerhout 5",date:"2021-01-31",scope:Z61,camera:C533,minutes:120,notes:"24 \u00D7 300s \u00B7 Optolong L-Extreme"},
+  {id:"aj-1778321802614",objectId:"Sharpless 157",date:"2021-02-13",scope:Z61,camera:C533,minutes:180,notes:"36 \u00D7 300s \u00B7 Optolong L-Extreme"},
+  {id:"aj-1778321987062",objectId:"IC 405",date:"2021-02-13",scope:Z61,camera:C533,minutes:180,notes:"36 \u00D7 300s \u00B7 Optolong L-Extreme"},
+  {id:"aj-1778320134826",objectId:"IC 434",date:"2021-12-16",scope:Z61,camera:C533,minutes:120,notes:"24 \u00D7 300s \u00B7 Optolong L-Extreme"},
+  {id:"aj-1778319955012",objectId:"Sh2-190",date:"2021-12-21",scope:Z61,camera:C533,minutes:120,notes:"24 \u00D7 300s \u00B7 Optolong L-Extreme"},
+  {id:"aj-1778314896542",objectId:"M42",date:"2022-01-12",scope:Z61,camera:C533,minutes:240,notes:"48 \u00D7 300s \u00B7 Optolong L-Extreme"},
+  {id:"aj-1778315635242",objectId:"Caldwell 49",date:"2022-01-18",scope:Z61,camera:C678,minutes:480,notes:"96 \u00D7 300s \u00B7 Optolong L-Extreme"},
+  {id:"aj-1778324352692",objectId:"M31",date:"2022-01-21",scope:Z61,camera:C533,minutes:300,notes:"60 \u00D7 300s \u00B7 Optolong L-Pro"},
+  {id:"aj-1778015464127",objectId:"M51",date:"2026-02-12",scope:EDGE,camera:C533,minutes:320,notes:"48 \u00D7 400s \u00B7 Optolong L-Pro"},
+  {id:"aj-1778312097579",objectId:"M101",date:"2026-03-22",scope:Z61,camera:C533,minutes:180,notes:"36 \u00D7 300s \u00B7 Optolong L-Pro"},
+  {id:"aj-1778312148827",objectId:"M106",date:"2026-03-28",scope:Z61,camera:C533,minutes:180,notes:"36 \u00D7 300s \u00B7 Optolong L-Pro"}
+];
+async function seedIfNeeded(){
+  if(DB.seeded === SEED_FLAG) return;
+  const haveC = new Set(DB.custom.map(c=>c.id));
+  for(const c of SEED_CUSTOM) if(!haveC.has(c.id)) DB.custom.push(c);
+  const haveS = new Set(DB.sessions.map(s=>s.id));
+  for(const s of SEED_SESSIONS) if(!haveS.has(s.id)) DB.sessions.push(s);
+  DB.seeded = SEED_FLAG;
+  await saveDB();
+}
+
+async function loadDB(){
+  try{
+    if(window.storage){
+      const r = await window.storage.get(STORE_KEY);
+      if(r && r.value) DB = JSON.parse(r.value);
+      storageOK = true;
+    }
+  }catch(e){
+    // key missing on first run still means storage works
+    storageOK = !!window.storage;
+  }
+  document.getElementById("storage-note").textContent =
+    storageOK ? "sessions saved on this device" : "storage unavailable — sessions last this visit only";
+}
+async function saveDB(){
+  try{
+    if(storageOK) await window.storage.set(STORE_KEY, JSON.stringify(DB));
+    else memFallback[STORE_KEY] = JSON.stringify(DB);
+  }catch(e){ console.error("save failed", e); }
+}
+
+function allObjects(){
+  return MESSIER.map(m=>({id:m[0],name:m[1],type:m[2],ra:m[3],dec:m[4],custom:false}))
+    .concat(DB.custom.map(c=>({...c,custom:true})));
+}
+function sessionsFor(id){ return DB.sessions.filter(s=>s.objectId===id).sort((a,b)=>b.date.localeCompare(a.date)); }
+function imagedIds(){ return new Set(DB.sessions.map(s=>s.objectId)); }
+
+// ================= chart =================
+const canvas = document.getElementById("chart");
+const ctx = canvas.getContext("2d");
+const wrap = document.getElementById("chart-wrap");
+let W=0,H=0,DPR=1;
+let scale = 2;            // px per degree
+let cx = 180, cy = 20;    // sky coords at viewport centre (RA deg, Dec deg)
+let selected = null;
+let hover = null;
+
+// seeded faint background stars
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+const rnd = mulberry32(20261006);
+const FAINT = Array.from({length:1400},()=>({ra:rnd()*360,dec:(Math.asin(rnd()*2-1)*180/Math.PI),m:3+rnd()*3}));
+
+function resize(){
+  DPR = window.devicePixelRatio||1;
+  W = wrap.clientWidth; H = wrap.clientHeight;
+  canvas.width = W*DPR; canvas.height = H*DPR;
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  draw();
+}
+window.addEventListener("resize", resize);
+
+// sky -> screen (RA increases to the LEFT, like a real chart)
+function sx(ra){ let d = ra - cx; d = ((d+540)%360)-180; return W/2 - d*scale; }
+function sy(dec){ return H/2 - (dec - cy)*scale; }
+
+function fitAll(){ scale = Math.max(W/400, 0.9); cx = 180; cy = 15; draw(); }
+
+function draw(){
+  ctx.clearRect(0,0,W,H);
+  // backdrop
+  const g = ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,"#0a0e1c"); g.addColorStop(1,"#0b1022");
+  ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
+
+  // out-of-sky shading beyond poles
+  const yN = sy(90), yS = sy(-90);
+  ctx.fillStyle = "#070a14";
+  if(yN>0) ctx.fillRect(0,0,W,yN);
+  if(yS<H) ctx.fillRect(0,yS,W,H-yS);
+
+  // graticule
+  ctx.lineWidth = 1;
+  ctx.font = "10.5px ui-monospace, Menlo, monospace";
+  for(let ra=0; ra<360; ra+=15){
+    const x = sx(ra);
+    if(x<-2||x>W+2) continue;
+    ctx.strokeStyle = ra%90===0 ? "#222c49" : "#1a2138";
+    ctx.beginPath(); ctx.moveTo(x,Math.max(0,yN)); ctx.lineTo(x,Math.min(H,yS)); ctx.stroke();
+    ctx.fillStyle = "#4a5577";
+    ctx.fillText((ra/15)+"h", x+4, Math.min(H-6, Math.max(14, yN+14)));
+  }
+  for(let dec=-80; dec<=80; dec+=10){
+    const y = sy(dec);
+    if(y<-2||y>H+2) continue;
+    ctx.strokeStyle = dec===0 ? "#26304f" : "#1a2138";
+    ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke();
+    if(dec%20===0){ ctx.fillStyle="#4a5577"; ctx.fillText((dec>0?"+":"")+dec+"\u00B0", 6, y-4); }
+  }
+
+  // faint star field
+  for(const s of FAINT){
+    const x = sx(s.ra), y = sy(s.dec);
+    if(x<-4||x>W+4||y<-4||y>H+4) continue;
+    const r = Math.max(.3, (6.4-s.m)*0.22);
+    ctx.fillStyle = "rgba(170,182,212,"+(0.18+(6.4-s.m)*0.05).toFixed(2)+")";
+    ctx.beginPath(); ctx.arc(x,y,r,0,7); ctx.fill();
+  }
+
+  // bright stars
+  for(const s of STARS){
+    const x = sx(s[1]), y = sy(s[2]);
+    if(x<-20||x>W+20||y<-20||y>H+20) continue;
+    const r = Math.max(1.1,(2.6-s[3])*1.05);
+    const gl = ctx.createRadialGradient(x,y,0,x,y,r*3);
+    gl.addColorStop(0,"rgba(232,236,245,.95)"); gl.addColorStop(1,"rgba(232,236,245,0)");
+    ctx.fillStyle = gl; ctx.beginPath(); ctx.arc(x,y,r*3,0,7); ctx.fill();
+    ctx.fillStyle = "#eef1f8"; ctx.beginPath(); ctx.arc(x,y,r,0,7); ctx.fill();
+    if(scale>1.6 || s[3]<1.2){
+      ctx.fillStyle = "rgba(138,147,173,.75)";
+      ctx.font = "italic 11px Georgia, serif";
+      ctx.fillText(s[0], x+r+4, y+3);
+    }
+  }
+
+  // DSO markers
+  const done = imagedIds();
+  for(const o of allObjects()){
+    const x = sx(o.ra), y = sy(o.dec);
+    if(x<-30||x>W+30||y<-30||y>H+30) continue;
+    const isSel = selected && selected.id===o.id;
+    if(done.has(o.id)){
+      // amber finder reticle
+      ctx.strokeStyle = isSel ? "#f3c96a" : "#e8b44c";
+      ctx.lineWidth = isSel ? 1.8 : 1.3;
+      const r = isSel ? 9 : 7;
+      ctx.beginPath(); ctx.arc(x,y,r,0,7); ctx.stroke();
+      for(let a=0;a<4;a++){
+        const t=a*Math.PI/2;
+        ctx.beginPath();
+        ctx.moveTo(x+Math.cos(t)*r, y+Math.sin(t)*r);
+        ctx.lineTo(x+Math.cos(t)*(r+4), y+Math.sin(t)*(r+4));
+        ctx.stroke();
+      }
+      const n = sessionsFor(o.id).length;
+      if(n>1){
+        ctx.fillStyle="#e8b44c"; ctx.font="bold 10px ui-monospace, monospace";
+        ctx.fillText("\u00D7"+n, x+r+6, y-r);
+      }
+    }else{
+      ctx.strokeStyle = isSel ? "#9fb0d8" : "rgba(93,107,143,.8)";
+      ctx.lineWidth = isSel ? 1.6 : 1;
+      ctx.beginPath(); ctx.arc(x,y,isSel?7:4.5,0,7); ctx.stroke();
+    }
+    if(scale>2.6 || isSel || done.has(o.id)){
+      ctx.fillStyle = done.has(o.id) ? "rgba(232,180,76,.95)" : "rgba(138,147,173,.85)";
+      ctx.font = "11px ui-monospace, Menlo, monospace";
+      ctx.fillText(o.id, x+10, y+12);
+    }
+  }
+}
+
+// nearest object to a screen point
+function pick(mx,my){
+  let best=null, bd=14;
+  for(const o of allObjects()){
+    const d = Math.hypot(sx(o.ra)-mx, sy(o.dec)-my);
+    if(d<bd){bd=d;best=o;}
+  }
+  return best;
+}
+
+// ---- pan / zoom / hover / click ----
+let dragging=false, moved=false, lx=0, ly=0;
+canvas.addEventListener("pointerdown",e=>{dragging=true;moved=false;lx=e.clientX;ly=e.clientY;canvas.setPointerCapture(e.pointerId);canvas.classList.add("dragging");});
+canvas.addEventListener("pointermove",e=>{
+  const rect=canvas.getBoundingClientRect();
+  const mx=e.clientX-rect.left, my=e.clientY-rect.top;
+  if(dragging){
+    const dx=e.clientX-lx, dy=e.clientY-ly;
+    if(Math.abs(dx)+Math.abs(dy)>3) moved=true;
+    cx = ((cx + dx/scale)%360+360)%360;
+    cy = Math.max(-90,Math.min(90, cy + dy/scale));
+    lx=e.clientX; ly=e.clientY; draw(); return;
+  }
+  const h = pick(mx,my);
+  const hl = document.getElementById("hoverlabel");
+  if(h){
+    hl.style.display="block";
+    hl.style.left=(mx+14)+"px"; hl.style.top=(my+10)+"px";
+    hl.innerHTML = "<b>"+h.id+"</b>"+(h.name?" \u00B7 "+h.name:"")+"<br><span class='t'>"+(TYPES[h.type]||h.type)+"</span>";
+    canvas.style.cursor="pointer";
+  }else{
+    hl.style.display="none"; canvas.style.cursor="grab";
+  }
+});
+canvas.addEventListener("pointerup",e=>{
+  dragging=false; canvas.classList.remove("dragging");
+  if(!moved){
+    const rect=canvas.getBoundingClientRect();
+    const h = pick(e.clientX-rect.left, e.clientY-rect.top);
+    if(h) select(h);
+  }
+});
+canvas.addEventListener("wheel",e=>{
+  e.preventDefault();
+  const rect=canvas.getBoundingClientRect();
+  const mx=e.clientX-rect.left, my=e.clientY-rect.top;
+  const raAt = cx + (W/2-mx)/scale, decAt = cy + (H/2-my)/scale;
+  scale = Math.max(0.7, Math.min(30, scale*(e.deltaY<0?1.15:1/1.15)));
+  cx = ((raAt - (W/2-mx)/scale)%360+360)%360;
+  cy = Math.max(-90,Math.min(90, decAt - (H/2-my)/scale));
+  draw();
+},{passive:false});
+document.getElementById("zin").onclick=()=>{scale=Math.min(30,scale*1.3);draw();};
+document.getElementById("zout").onclick=()=>{scale=Math.max(0.7,scale/1.3);draw();};
+document.getElementById("zfit").onclick=fitAll;
+
+// ================= UI =================
+const fmtRA = ra=>{const h=ra/15,hh=Math.floor(h),mm=Math.round((h-hh)*60);return hh+"h "+String(mm).padStart(2,"0")+"m";};
+const fmtDec = d=>{const s=d<0?"\u2212":"+";const a=Math.abs(d);return s+Math.floor(a)+"\u00B0 "+String(Math.round((a-Math.floor(a))*60)).padStart(2,"0")+"\u2032";};
+
+function select(o, fly=true){
+  selected = o;
+  if(fly){ cx=o.ra; cy=o.dec; if(scale<3.2) scale=3.2; }
+  draw(); renderDetail();
+}
+
+function renderDetail(){
+  const el = document.getElementById("detail");
+  if(!selected){ return; }
+  const o = selected;
+  const sess = sessionsFor(o.id);
+  let h = "<div class='obj-name'>"+o.id+"</div>";
+  if(o.name) h += "<div class='obj-alias'>"+o.name+"</div>";
+  h += "<div class='obj-meta'><span>"+(TYPES[o.type]||o.type)+"</span>"
+     + "<span class='mono'>RA <b>"+fmtRA(o.ra)+"</b></span>"
+     + "<span class='mono'>Dec <b>"+fmtDec(o.dec)+"</b></span></div>";
+  h += sess.length ? "<span class='imaged-flag'>Imaged \u00B7 "+sess.length+" session"+(sess.length>1?"s":"")+"</span>"
+                   : "<span class='unimaged-flag'>Not yet imaged</span>";
+  for(const s of sess){
+    h += "<div class='sess'><div class='d'>"+s.date+"</div>";
+    if(s.scope||s.camera) h += "<div class='gear'>"+[s.scope,s.camera].filter(Boolean).join(" \u00B7 ")+"</div>";
+    h += "<div class='row2'>"+(s.minutes?"<span><b>"+(s.minutes/60).toFixed(1)+"h</b> integration</span>":"")
+       + (s.seeing?"<span>seeing: "+s.seeing+"</span>":"")+"</div>";
+    if(s.notes) h += "<div class='notes'>"+esc(s.notes)+"</div>";
+    h += "<button class='del' data-del='"+s.id+"'>remove this session</button></div>";
+  }
+  h += "<button class='btn' id='addbtn'>Log a session</button>";
+  h += formHTML();
+  el.innerHTML = h;
+  document.getElementById("addbtn").onclick = ()=>{
+    const f=document.getElementById("form");
+    f.style.display = f.style.display==="block"?"none":"block";
+    if(f.style.display==="block") document.getElementById("f-date").focus();
+  };
+  document.getElementById("savebtn").onclick = saveSession;
+  el.querySelectorAll("[data-del]").forEach(b=>b.onclick=async()=>{
+    DB.sessions = DB.sessions.filter(s=>s.id!==b.dataset.del);
+    await saveDB(); renderDetail(); renderStats(); draw();
+  });
+}
+
+function formHTML(){
+  const today = new Date().toISOString().slice(0,10);
+  return "<div id='form'>"
+   + "<label for='f-date'>Date</label><input id='f-date' type='date' value='"+today+"'>"
+   + "<div class='formrow'><div><label for='f-scope'>Telescope / lens</label><input id='f-scope' placeholder='e.g. 72ED'></div>"
+   + "<div><label for='f-cam'>Camera</label><input id='f-cam' placeholder='e.g. ASI533MC'></div></div>"
+   + "<div class='formrow'><div><label for='f-min'>Integration (min)</label><input id='f-min' type='number' min='0' step='5'></div>"
+   + "<div><label for='f-see'>Seeing</label><select id='f-see'><option value=''>&ndash;</option><option>excellent</option><option>good</option><option>average</option><option>poor</option></select></div></div>"
+   + "<label for='f-notes'>Notes</label><textarea id='f-notes' placeholder='Guiding, filters, moon phase, how it went&hellip;'></textarea>"
+   + "<button class='btn' id='savebtn'>Save session</button>"
+   + "</div>";
+}
+
+async function saveSession(){
+  const date = document.getElementById("f-date").value;
+  if(!date || !selected) return;
+  DB.sessions.push({
+    id: "s"+Date.now(),
+    objectId: selected.id,
+    date,
+    scope: document.getElementById("f-scope").value.trim(),
+    camera: document.getElementById("f-cam").value.trim(),
+    minutes: parseInt(document.getElementById("f-min").value)||0,
+    seeing: document.getElementById("f-see").value,
+    notes: document.getElementById("f-notes").value.trim()
+  });
+  await saveDB(); renderDetail(); renderStats(); draw();
+}
+
+function renderStats(){
+  const ids = imagedIds();
+  document.getElementById("s-objects").textContent = ids.size;
+  document.getElementById("s-sessions").textContent = DB.sessions.length;
+  const mins = DB.sessions.reduce((a,s)=>a+(s.minutes||0),0);
+  document.getElementById("s-hours").textContent = (mins/60).toFixed(1);
+  const last = DB.sessions.map(s=>s.date).sort().pop();
+  document.getElementById("s-last").textContent = last || "\u2013";
+}
+
+// search
+const search = document.getElementById("search");
+const sug = document.getElementById("suggest");
+search.addEventListener("input",()=>{
+  const q = search.value.trim().toLowerCase();
+  if(!q){sug.style.display="none";return;}
+  const hits = allObjects().filter(o=>
+    o.id.toLowerCase().startsWith(q) || (o.name && o.name.toLowerCase().includes(q))
+  ).slice(0,9);
+  sug.innerHTML = hits.map((o,i)=>
+    "<div data-i='"+o.id+"'><span><b>"+o.id+"</b>"+(o.name?" \u2014 "+o.name:"")+"</span><span class='dim'>"+(TYPES[o.type]||"")+"</span></div>"
+  ).join("") || "<div class='dim' style='cursor:default'>no match in catalogue</div>";
+  sug.style.display="block";
+  sug.querySelectorAll("[data-i]").forEach(d=>d.onclick=()=>{
+    const o = allObjects().find(x=>x.id===d.dataset.i);
+    sug.style.display="none"; search.value="";
+    if(o) select(o);
+  });
+});
+search.addEventListener("keydown",e=>{
+  if(e.key==="Enter"){
+    const first = sug.querySelector("[data-i]");
+    if(first) first.click();
+  }
+  if(e.key==="Escape"){sug.style.display="none";}
+});
+document.addEventListener("click",e=>{ if(!e.target.closest("#searchbox")) sug.style.display="none"; });
+
+// ================= boot =================
+(async function(){
+  await loadDB();
+  await seedIfNeeded();
+  resize(); fitAll();
+  renderStats();
+})();
+function esc(s){return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
+</script>
+</body>
+</html>
