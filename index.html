@@ -412,10 +412,10 @@ async function renderDetail(){
   if(isDb && t.magnitude) h += "<span>mag <b>"+esc(t.magnitude)+"</b></span>";
   if(isDb && t.angular_size) h += "<span>"+esc(t.angular_size)+"</span>";
   h += "</div>";
+  if(isDb) h += "<div class='thumbwrap' id='thumbwrap'></div>";
   if(isDb && t.facts) h += "<div class='obj-facts'>"+esc(t.facts)+"</div>";
   h += sess.length ? "<span class='imaged-flag'>Imaged \u00B7 "+sess.length+" session"+(sess.length>1?"s":"")+"</span>"
                    : "<span class='unimaged-flag'>Not yet imaged</span>";
-  if(isDb) h += "<div class='thumbwrap' id='thumbwrap'></div>";
   for(const s of sess){
     h += "<div class='sess'><div class='d'>"+esc(s.date||"")+"</div>";
     if(s.telescope||s.camera) h += "<div class='gear'>"+esc([s.telescope,s.camera].filter(Boolean).join(" \u00B7 "))+"</div>";
