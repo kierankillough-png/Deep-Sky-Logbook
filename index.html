@@ -58,12 +58,6 @@
   .stat .v{font-size:20px;color:var(--amber);font-weight:600}
   .stat .k{font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-dim);margin-top:2px}
 
-  #shelf{display:none;padding:9px 14px;border-bottom:1px solid var(--line);
-    font-size:12px;color:var(--ink-dim);align-items:center;gap:7px;flex-wrap:wrap}
-  #shelf .chip{background:var(--panel);border:1px solid var(--line);border-radius:12px;
-    padding:3px 11px;cursor:pointer;color:var(--ink);font-size:12.5px}
-  #shelf .chip:hover{border-color:var(--amber-dim);color:var(--amber)}
-
   #searchbox{position:relative;padding:12px 14px;border-bottom:1px solid var(--line)}
   #search{width:100%;background:var(--panel);border:1px solid var(--line);color:var(--ink);
     padding:8px 10px;font-size:14px;font-family:inherit;border-radius:3px}
@@ -139,7 +133,7 @@
     #sheet-handle{display:flex}
     #surveyctl{bottom:58px}
     /* a selected target gets the whole sheet: hide browse chrome, show the way back */
-    #side.has-sel #stats,#side.has-sel #shelf,#side.has-sel #searchbox{display:none}
+    #side.has-sel #stats,#side.has-sel #searchbox{display:none}
     #side.has-sel .backbtn{display:block}
   }
   @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
@@ -186,7 +180,6 @@
         <div class="stat"><div class="v" id="s-hours">&ndash;</div><div class="k">Integration (h)</div></div>
         <div class="stat"><div class="v" id="s-last">&ndash;</div><div class="k">Last session</div></div>
       </div>
-      <div id="shelf"><span>Solar system:</span></div>
       <div id="searchbox">
         <input id="search" type="text" placeholder="Find a target&hellip; e.g. M106, Whirlpool" autocomplete="off">
         <div id="suggest"></div>
@@ -274,7 +267,10 @@ async function loadAll(){
     sb.from("imaging_sessions").select("id").not("image","is",null)
   ]);
   if(t.error||s.error) throw (t.error||s.error);
-  targets = t.data||[]; sessions = s.data||[];
+  // deep sky only: drop wishlist entries and anything without fixed coordinates (Sun, Moon, planets)
+  targets = (t.data||[]).filter(x => x.type !== "wishlist" && x.ra != null && x.dec != null);
+  const keep = new Set(targets.map(x=>x.id));
+  sessions = (s.data||[]).filter(x => keep.has(x.target_id));
   hasImage = new Set((img.data||[]).map(r=>r.id));
 }
 
@@ -311,8 +307,10 @@ function buildMap(){
       survey:"P/DSS2/color", fov:160, projection:"AIT",
       cooFrame:"ICRSd", showFullscreenControl:false, showLayersControl:false,
       showGotoControl:false, showFrame:false, showCooGrid:true,
-      showSimbadPointerControl:false, showContextMenu:false
+      showSimbadPointerControl:false, showContextMenu:false,
+      gridColor:"rgb(74, 85, 119)", gridOpacity:0.28, gridLabelSize:10
     });
+    try{ aladin.setCooGrid({ color:"rgb(74, 85, 119)", opacity:0.28, labelSize:10 }); }catch(e){}
     catImaged = A.catalog({name:"Imaged", shape:RETICLE});
     catCatalogue = A.catalog({name:"Catalogue", shape:FAINTRING});
     aladin.addCatalog(catCatalogue);
@@ -528,7 +526,7 @@ async function deleteSession(sid){
   refreshMarkers(); renderStats(); renderDetail();
 }
 
-// ================= stats / shelf / search =================
+// ================= stats / search =================
 function renderStats(){
   const imagedIds = new Set(sessions.map(s=>s.target_id));
   $("s-objects").textContent = imagedIds.size;
@@ -536,18 +534,6 @@ function renderStats(){
   $("s-hours").textContent = (sessions.reduce((a,s)=>a+mins(s),0)/60).toFixed(1);
   const last = sessions.map(s=>s.date||"").sort().pop();
   $("s-last").textContent = last || "\u2013";
-}
-
-function renderShelf(){
-  const solar = targets.filter(t=>t.ra==null);
-  const shelf=$("shelf");
-  if(!solar.length){shelf.style.display="none";return;}
-  shelf.style.display="flex";
-  shelf.innerHTML="<span>Solar system:</span>"+solar.map(t=>"<button class='chip' data-id='"+t.id+"'>"+esc(t.name)+"</button>").join("");
-  shelf.querySelectorAll(".chip").forEach(c=>c.onclick=()=>{
-    const t=targets.find(x=>x.id===c.dataset.id);
-    if(t) select({kind:"db",t}, false);
-  });
 }
 
 function searchPool(){
@@ -602,7 +588,7 @@ sb.auth.onAuthStateChange((_e, session)=>{ user=session?session.user:null; rende
   renderAuth();
   try{
     await loadAll();
-    renderStats(); renderShelf();
+    renderStats();
     $("detail").innerHTML="<div class='empty'>Select an object on the sky, or search for one.<br><br>Amber reticles are your captures \u2014 tap one to see your image and sessions. Faint rings are the rest of the Messier catalogue.</div>";
   }catch(e){
     $("detail").innerHTML="<div class='empty'>Couldn\u2019t reach the AstroJournal database ("+esc(e.message||String(e))+"). Check your connection and refresh.</div>";
